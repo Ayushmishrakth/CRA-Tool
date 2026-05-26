@@ -1,0 +1,99 @@
+# =========================================
+# Python
+# =========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =========================================
+# Virtual Environments
+# =========================================
+venv/
+.venv/
+env/
+ENV/
+
+# =========================================
+# Environment Variables / Secrets
+# =========================================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+!.env.example
+
+# =========================================
+# IDE / Editor
+# =========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# =========================================
+# Testing / Coverage
+# =========================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# =========================================
+# OS Generated
+# =========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# =========================================
+# Logs
+# =========================================
+*.log
+logs/
+
+# =========================================
+# Local Database
+# =========================================
+*.db
+*.db-journal
+*.sqlite3
+
+# =========================================
+# Alembic
+# =========================================
+# (migrations/ is tracked — only ignore temp files)
+
+# =========================================
+# Frontend (cra-frontend)
+# =========================================
+cra-frontend/node_modules/
+cra-frontend/dist/
+cra-frontend/build/
+cra-frontend/.env
+cra-frontend/.env.local
+
+# =========================================
+# Misc
+# =========================================
+*.bak
+*.tmp
+*.temp
+.cache/
