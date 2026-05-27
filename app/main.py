@@ -6,12 +6,15 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
+from app.api.v1 import health as health_api
+from app.api.v1 import websocket as websocket_api
+from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
+from app.core.middleware import register_middleware
 from app.db.session import engine
-from app.routes import assessment, auth, dashboard, health
 from app.utils.logger import logger
 
 
@@ -33,18 +36,12 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# Allow MSAL React dev server to call the API
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+register_middleware(app)
+register_exception_handlers(app)
 
-api_v1_routers = [health.router, auth.router, assessment.router, dashboard.router]
-for router in api_v1_routers:
-    app.include_router(router, prefix=settings.api_v1_prefix)
+app.include_router(api_router, prefix=settings.api_v1_prefix)
+app.include_router(health_api.router)
+app.include_router(websocket_api.router)
 
 
 def custom_openapi() -> dict[str, Any]:

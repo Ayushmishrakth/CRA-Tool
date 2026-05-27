@@ -11,6 +11,16 @@ import { tokenStorage } from "../utils/tokenStorage";
 import { formatApiError } from "../utils/authErrors";
 
 const AuthContext = createContext(null);
+const SESSION_RESTORE_TIMEOUT_MS = 8000;
+
+function withTimeout(promise, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), SESSION_RESTORE_TIMEOUT_MS);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+}
 
 export function AuthProvider({ children }) {
   const { instance } = useMsal();
@@ -26,7 +36,10 @@ export function AuthProvider({ children }) {
     try {
       if (tokenStorage.hasAccessToken()) {
         console.info("[CRA] Restoring session from stored CRA JWT");
-        const profile = await loadCurrentUser();
+        const profile = await withTimeout(
+          loadCurrentUser(),
+          "Session restore timed out. Please sign in again."
+        );
         setUser(profile);
         console.info("[CRA] Session restored:", profile.email);
       } else {
@@ -36,6 +49,7 @@ export function AuthProvider({ children }) {
       console.warn("[CRA] Session restore failed", err);
       tokenStorage.clear();
       setUser(null);
+      setError(err.message || "Session restore failed. Please sign in again.");
     } finally {
       setLoading(false);
     }
@@ -45,7 +59,7 @@ export function AuthProvider({ children }) {
     bootstrap();
   }, [bootstrap]);
 
-  const loginWithMicrosoft = async () => {
+  const loginWithMicrosoft = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -73,9 +87,9 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [instance]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -93,9 +107,9 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [instance]);
 
-  const clearAuthCaches = () => clearAllAuthCaches(instance);
+  const clearAuthCaches = useCallback(() => clearAllAuthCaches(instance), [instance]);
 
   const value = useMemo(
     () => ({
@@ -109,7 +123,16 @@ export function AuthProvider({ children }) {
       setError,
       refreshUser: bootstrap,
     }),
-    [user, loading, error, isAuthenticated, bootstrap]
+    [
+      user,
+      loading,
+      error,
+      isAuthenticated,
+      loginWithMicrosoft,
+      logout,
+      clearAuthCaches,
+      bootstrap,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

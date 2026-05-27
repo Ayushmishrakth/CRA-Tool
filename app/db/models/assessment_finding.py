@@ -33,3 +33,15 @@ class AssessmentFinding(Base, UUIDMixin):
     assessment: Mapped["Assessment"] = relationship(back_populates="findings", lazy="selectin")
     parameter: Mapped["AssessmentParameter"] = relationship(lazy="selectin")
     rule: Mapped["AssessmentRule"] = relationship(lazy="selectin")
+
+    @property
+    def parameter_key(self) -> str | None:
+        return self.parameter.parameter_key if self.parameter else None
+
+    @property
+    def parameter_name(self) -> str | None:
+        return self.parameter.parameter_name if self.parameter else None
+
+    @property
+    def category(self) -> str | None:
+        return self.parameter.category if self.parameter else None

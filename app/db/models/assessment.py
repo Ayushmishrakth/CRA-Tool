@@ -38,3 +38,12 @@ class Assessment(Base, UUIDMixin, TimestampMixin, TenantMixin):
     findings: Mapped[list["AssessmentFinding"]] = relationship(
         back_populates="assessment", cascade="all, delete-orphan", lazy="selectin"
     )
+    jobs: Mapped[list["AssessmentJob"]] = relationship(
+        back_populates="assessment", cascade="all, delete-orphan", lazy="selectin"
+    )
+    events: Mapped[list["AssessmentEvent"]] = relationship(
+        back_populates="assessment", cascade="all, delete-orphan", lazy="selectin"
+    )
+    recommendations: Mapped[list["AssessmentRecommendation"]] = relationship(
+        back_populates="assessment", cascade="all, delete-orphan", lazy="selectin"
+    )

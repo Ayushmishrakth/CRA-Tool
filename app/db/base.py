@@ -12,5 +12,8 @@ from app.db.models.refresh_token import RefreshToken
 from app.db.models.audit_log import AuditLog
 from app.db.models.assessment import Assessment
 from app.db.models.assessment_finding import AssessmentFinding
+from app.db.models.assessment_job import AssessmentJob
+from app.db.models.assessment_event import AssessmentEvent
 from app.db.models.assessment_parameter import AssessmentParameter
+from app.db.models.assessment_recommendation import AssessmentRecommendation
 from app.db.models.assessment_rule import AssessmentRule

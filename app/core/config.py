@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     # --- Database ---
     database_url: str = "sqlite:///./cra.db"
 
+    # --- Redis / Celery runtime ---
+    redis_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str | None = None
+    celery_result_backend: str | None = None
+    celery_task_always_eager: bool = False
+    celery_task_time_limit_seconds: int = 900
+    celery_task_soft_time_limit_seconds: int = 840
+
     # --- CRA internal JWT ---
     secret_key: str = Field(
         default="CHANGE-ME-use-openssl-rand-hex-32",
@@ -73,6 +81,18 @@ class Settings(BaseSettings):
     azure_client_secret: str | None = None
     azure_authority: str | None = None
     azure_redirect_uri: str | None = None
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def parse_debug_mode(cls, value):
+        """Accept common deployment mode strings from process environments."""
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "prod", "production", "false", "0", "no", "off"}:
+                return False
+            if normalized in {"debug", "dev", "development", "true", "1", "yes", "on"}:
+                return True
+        return value
 
     @field_validator("secret_key")
     @classmethod
@@ -98,6 +118,14 @@ class Settings(BaseSettings):
     @property
     def microsoft_jwks_uri(self) -> str:
         return f"{self.microsoft_authority}/discovery/v2.0/keys"
+
+    @property
+    def resolved_celery_broker_url(self) -> str:
+        return self.celery_broker_url or self.redis_url
+
+    @property
+    def resolved_celery_result_backend(self) -> str:
+        return self.celery_result_backend or self.redis_url
 
 
 @lru_cache

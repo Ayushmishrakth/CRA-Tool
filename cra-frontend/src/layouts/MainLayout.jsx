@@ -1,4 +1,4 @@
-import { Link, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function MainLayout() {
@@ -11,6 +11,10 @@ export default function MainLayout() {
           <Link to="/dashboard">CRA Platform</Link>
           <span className="badge">Copilot Readiness</span>
         </div>
+        <nav className="main-nav">
+          <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/assessments">Assessments</NavLink>
+        </nav>
         {user && (
           <div className="header-actions">
             <span className="user-email">{user.display_name || user.email}</span>

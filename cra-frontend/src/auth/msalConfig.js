@@ -7,11 +7,17 @@ export const msalConfig = {
   auth: {
     clientId: import.meta.env.VITE_MSAL_CLIENT_ID,
 
-    authority: "https://login.microsoftonline.com/common",
+    authority:
+      import.meta.env.VITE_MSAL_AUTHORITY ||
+      "https://login.microsoftonline.com/common",
 
-    redirectUri: "http://localhost:3000",
+    redirectUri:
+      import.meta.env.VITE_MSAL_REDIRECT_URI ||
+      window.location.origin,
 
-    postLogoutRedirectUri: "http://localhost:3000",
+    postLogoutRedirectUri:
+      import.meta.env.VITE_MSAL_REDIRECT_URI ||
+      window.location.origin,
 
     navigateToLoginRequestUrl: false,
   },
@@ -23,7 +29,7 @@ export const msalConfig = {
 };
 
 export const loginRequest = {
-  scopes: ["openid", "profile", "email", "User.Read"],
+  scopes: ["openid", "profile", "email"],
 };
 
 /** Used by silent / popup token acquisition after login. */
@@ -33,6 +39,10 @@ export const tokenRequest = {
 
 /** Used by logout popup. */
 export const logoutRequest = {
-  postLogoutRedirectUri: "http://localhost:3000",
-  mainWindowRedirectUri: "http://localhost:3000",
+  postLogoutRedirectUri:
+    import.meta.env.VITE_MSAL_REDIRECT_URI ||
+    window.location.origin,
+  mainWindowRedirectUri:
+    import.meta.env.VITE_MSAL_REDIRECT_URI ||
+    window.location.origin,
 };
