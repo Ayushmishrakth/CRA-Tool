@@ -1,6 +1,7 @@
 # CRA Backend Requirements
-# Python 3.11+ compatible dependency ranges for the current Phase 6 architecture
-# and near-term Phase 7 distributed assessment runtime.
+# Python 3.11+ compatible dependency ranges for the CRA backend:
+# auth, tenant isolation, assessment runtime, Redis/Celery orchestration,
+# PowerShell collector execution, WebSocket events, and Phase 8 reporting.
 
 # --- API runtime ---
 fastapi>=0.115.0,<1.0.0

@@ -1,147 +1,284 @@
 # CRA Backend
 
-**Copilot Readiness Assessment (CRA)** — enterprise FastAPI backend for Microsoft 365.
+Copilot Readiness Assessment (CRA) backend for Microsoft 365 readiness, assessment runtime orchestration, PowerShell collector execution, scoring, recommendations, and enterprise report generation.
 
-## Authentication model
+## Current Capabilities
 
-This platform does **not** use email/password registration.
+- FastAPI async API with versioned `/api/v1` routes
+- Microsoft Entra ID login using Microsoft ID tokens
+- CRA internal JWT access and refresh tokens
+- Tenant-scoped protected APIs
+- PostgreSQL-ready async SQLAlchemy with SQLite local development support
+- Alembic migrations
+- Registry-driven assessment parameters, collectors, rules, and recommendations
+- Celery assessment runtime with Redis broker/result backend
+- Redis pub/sub event fanout
+- WebSocket runtime event streaming
+- Phase 7B PowerShell collector execution engine
+- Runtime scoring and recommendation persistence
+- Phase 8A PDF/DOCX CRA report generation
 
-| Layer | Technology |
-|-------|------------|
-| Frontend login | MSAL React (frontend team) |
-| Identity provider | Microsoft Entra ID |
-| Backend login input | Microsoft **ID token** |
-| Backend API security | **CRA internal JWT** (Bearer) |
-
-### Flow
+## Architecture
 
 ```text
-MSAL React → Microsoft Login → Microsoft ID Token
-    → POST /api/v1/auth/login { "id_token": "..." }
-    → Backend validates token (Entra JWKS)
-    → Create/update user in database
-    → Return CRA access_token + refresh_token
-    → Frontend uses CRA JWT for all API calls
+React frontend
+    -> FastAPI API
+    -> CRA JWT auth
+    -> tenant-scoped assessment APIs
+    -> Celery assessment job
+    -> PowerShellExecutionEngine
+    -> collector JSON contract
+    -> findings
+    -> scoring
+    -> recommendations
+    -> report generation
+    -> PDF/DOCX artifacts
+
+Redis supports Celery and WebSocket event fanout.
 ```
 
-## Project structure
+## Project Structure
 
-```
+```text
 app/
-├── core/
-│   ├── config.py       # Settings (.env)
-│   ├── security.py     # CRA JWT create/verify
-│   ├── microsoft.py    # Microsoft ID token validation (PyJWT)
-│   ├── msal_client.py  # MSAL factory (Graph / Phase 4)
-│   └── auth.py         # FastAPI dependencies (Bearer, RBAC)
-├── routes/auth.py      # login, refresh, logout, me
-├── services/auth_service.py
-├── schemas/auth_schema.py
-├── models/user_model.py
-└── db/database.py
+├── api/v1/                     # API routers
+├── config/assessment_registry/ # parameters, collectors, rules, recommendations
+├── core/                       # settings, auth, security, Microsoft token helpers
+├── db/models/                  # SQLAlchemy models
+├── powershell/                 # PowerShell collector scripts
+├── schemas/                    # Pydantic response/request schemas
+├── services/
+│   ├── powershell/             # Phase 7B PowerShell runtime engine
+│   ├── reporting/              # Phase 8A report engine
+│   └── simulated_collectors/   # legacy/test collector helpers
+└── tasks/                      # Celery task entry points
+
+migrations/                     # Alembic migrations
+tests/                          # pytest validation suite
+storage/reports/                # generated reports, ignored by git
 ```
 
-## Installation
+## Requirements
+
+- Python 3.11+
+- Redis 5+
+- PowerShell 7+ (`pwsh`) for real collector execution
+- PostgreSQL for production, SQLite for local development
+
+Install dependencies:
 
 ```bash
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+```
+
+Copy the example environment:
+
+```bash
 cp .env.example .env
-# Set AZURE_CLIENT_ID, SECRET_KEY in .env
+```
+
+Update `.env` with a real `SECRET_KEY`, Microsoft Entra app registration values, database URL, and Redis URL.
+
+## Environment Variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `APP_NAME` | No | Application display name |
+| `APP_VERSION` | No | Application version |
+| `DEBUG` | No | Enables development behavior |
+| `API_V1_PREFIX` | No | API prefix, default `/api/v1` |
+| `CORS_ORIGINS` | No | Comma-separated frontend origins |
+| `DATABASE_URL` | Yes | SQLAlchemy database URL |
+| `REDIS_URL` | Yes | Redis URL for pub/sub and default Celery broker/backend |
+| `CELERY_BROKER_URL` | No | Overrides `REDIS_URL` for Celery broker |
+| `CELERY_RESULT_BACKEND` | No | Overrides `REDIS_URL` for Celery result backend |
+| `SECRET_KEY` | Yes | CRA JWT signing key |
+| `ALGORITHM` | No | JWT algorithm, default `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | No | Access token TTL |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | No | Refresh token TTL |
+| `AZURE_CLIENT_ID` | Yes | Microsoft Entra app client ID |
+| `AZURE_TENANT_ID` | Yes | Tenant ID, `common`, or `organizations` |
+| `AZURE_CLIENT_SECRET` | Optional | Server-side Microsoft Graph preparation |
+| `ORGANIZATION_NAME` | No | Default customer/report organization name |
+
+## Run Locally
+
+Start Redis:
+
+```bash
+redis-server
+```
+
+Run database migrations:
+
+```bash
+alembic upgrade head
+```
+
+Start the API:
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-## Environment variables
+Start Celery worker:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `SECRET_KEY` | Yes | CRA JWT signing key |
-| `ALGORITHM` | Yes | Default `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Yes | Access token TTL |
-| `AZURE_CLIENT_ID` | Yes | Entra app registration client ID |
-| `AZURE_TENANT_ID` | Yes | Tenant ID or `common` (multi-tenant) |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | No | Default 7 |
-
-## API endpoints (Phase 3)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/auth/login` | No | Microsoft ID token → CRA JWT |
-| POST | `/api/v1/auth/refresh` | No | New CRA token pair |
-| POST | `/api/v1/auth/logout` | Optional Bearer | Revoke tokens |
-| GET | `/api/v1/auth/me` | CRA Bearer | User profile |
-
-**Not implemented (by design):** register, password login.
-
-## Example: login
-
-Request (from MSAL React after `loginPopup` / `acquireTokenSilent`):
-
-```json
-POST /api/v1/auth/login
-{
-  "id_token": "<microsoft-id-token>"
-}
+```bash
+celery -A app.core.celery_app.celery_app worker --loglevel=info
 ```
 
-Response:
+Optional Flower dashboard:
 
-```json
-{
-  "access_token": "eyJ...",
-  "refresh_token": "eyJ...",
-  "token_type": "bearer",
-  "expires_in": 1800
-}
+```bash
+celery -A app.core.celery_app.celery_app flower
 ```
 
-## Example: protected call
+## Authentication Flow
+
+This platform does not use email/password registration.
+
+```text
+MSAL React -> Microsoft login -> Microsoft ID token
+    -> POST /api/v1/auth/login
+    -> backend validates Entra token
+    -> backend creates/updates user and session
+    -> backend returns CRA JWT access_token and refresh_token
+    -> frontend uses CRA Bearer token for protected APIs
+```
+
+Protected API example:
 
 ```bash
 curl http://127.0.0.1:8000/api/v1/auth/me \
   -H "Authorization: Bearer <CRA_ACCESS_TOKEN>"
 ```
 
-## Swagger
+## Main API Areas
 
-1. Call `POST /auth/login` with a real Microsoft `id_token`
-2. Copy `access_token`
-3. Click **Authorize** → paste token
-4. Call `GET /auth/me`
+| Area | Endpoints |
+| --- | --- |
+| Auth | `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/logout`, `/api/v1/auth/me` |
+| Assessments | `/api/v1/assessments`, `/api/v1/assessments/{id}` |
+| Runtime | `/api/v1/assessments/{id}/events`, `/api/v1/assessments/{id}/job` |
+| Findings | `/api/v1/assessments/{id}/findings` |
+| Recommendations | `/api/v1/assessments/{id}/recommendations` |
+| Reports | `/api/v1/assessments/{id}/generate-report`, `/api/v1/assessments/{id}/report`, `/api/v1/assessments/{id}/report/download` |
+| Registry | `/api/v1/registry/*` |
 
-## CRA JWT claims
+Swagger UI is available at:
 
-| Claim | Description |
-|-------|-------------|
-| `sub` | CRA user ID |
-| `tid` | Primary Microsoft tenant ID |
-| `email` | User email |
-| `role` | RBAC role |
-| `connected_tenants` | Tenant IDs user may access |
-| `jti` | Token ID (revocation on logout) |
-
-## Multi-tenant
-
-- `User.microsoft_tid` — home tenant
-- `UserTenantConnection` — linked tenants
-- `connected_tenants` in JWT for tenant-scoped APIs
-- `AZURE_TENANT_ID=common` for multi-tenant app registration
-
-## Protecting routes
-
-```python
-from app.core.auth import get_current_active_user, require_roles
-from app.models.user_model import User, UserRole
-
-@router.get("/admin")
-def admin_only(user: User = Depends(require_roles(UserRole.ADMIN))):
-    ...
+```text
+http://127.0.0.1:8000/docs
 ```
 
-## Phase 4+ (prepared)
+## Assessment Runtime
 
-- Microsoft Graph API (`msal_client.py`)
-- Admin consent / app registration
-- WebSocket auth (same CRA JWT validation)
-- OAuth token exchange (OBO)
+The runtime is registry-driven. Collector definitions are loaded from:
+
+```text
+app/config/assessment_registry/collectors.json
+```
+
+Lifecycle stages:
+
+```text
+QUEUED -> STARTING -> COLLECTING -> EVALUATING -> SCORING -> GENERATING_RECOMMENDATIONS -> COMPLETED
+```
+
+Runtime events are persisted and streamed over WebSockets. Key events include:
+
+- `assessment.started`
+- `collector.started`
+- `collector.stdout`
+- `collector.warning`
+- `collector.completed`
+- `collector.failed`
+- `collector.timeout`
+- `finding.generated`
+- `scoring.completed`
+- `recommendation.generated`
+- `progress.update`
+- `assessment.completed`
+
+## PowerShell Collectors
+
+Phase 7B replaces simulated collectors with real asynchronous PowerShell subprocess execution. Collectors must return structured JSON only:
+
+```json
+{
+  "status": "success",
+  "collector": "users_without_mfa",
+  "tenant_id": "tenant-id",
+  "timestamp": "2026-05-27T00:00:00Z",
+  "findings": [],
+  "metrics": {},
+  "warnings": [],
+  "errors": []
+}
+```
+
+Implemented starter scripts live under:
+
+```text
+app/powershell/identity/
+app/powershell/security/
+app/powershell/compliance/
+app/powershell/collaboration/
+app/powershell/licensing/
+```
+
+The execution engine enforces subprocess isolation, timeout cleanup, retry handling, stdout/stderr capture, JSON result parsing, telemetry, and failure isolation.
+
+## Reports
+
+Phase 8A generates enterprise CRA reports from assessment findings, scoring, recommendations, and runtime evidence.
+
+Generated artifacts:
+
+```text
+storage/reports/{assessment_id}/copilot-readiness-assessment.pdf
+storage/reports/{assessment_id}/copilot-readiness-assessment.docx
+```
+
+The report engine includes:
+
+- readiness score calculation
+- severity, pillar, service, and pass/fail analytics
+- dynamic executive summary
+- dynamic observations and conclusion
+- detailed service sections
+- PDF rendering with ReportLab
+- DOCX rendering with python-docx
+- minimal fallback renderers for local environments without optional document libraries
+
+Reports are tenant-scoped, assessment-scoped, authenticated, and downloadable only by authorized users.
+
+## Validation
+
+Run the backend test suite:
+
+```bash
+pytest -q
+```
+
+Run migrations:
+
+```bash
+alembic upgrade head
+alembic check
+```
+
+Useful targeted checks:
+
+```bash
+pytest -q tests/test_phase7b_powershell_runtime.py
+pytest -q tests/test_phase8_reports.py
+```
+
+## Notes
+
+- `storage/reports/`, local SQLite databases, virtual environments, and `.env` files are ignored by git.
+- The separate React/Vite frontend should live outside this backend repository, for example `/home/herb/cra-frontend`.
+- Real Microsoft Graph collectors are reserved for a later phase; current PowerShell starter collectors use safe local/mock data while exercising real subprocess execution.
