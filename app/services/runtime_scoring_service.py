@@ -1,5 +1,5 @@
 """
-Runtime scoring service for simulated Phase 7A assessment execution.
+Runtime scoring service for assessment execution.
 """
 
 from __future__ import annotations

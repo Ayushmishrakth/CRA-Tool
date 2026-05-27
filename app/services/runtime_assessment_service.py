@@ -1,8 +1,8 @@
 """
-Phase 7A assessment runtime orchestration.
+Phase 7 assessment runtime orchestration.
 
-This service intentionally uses simulated collectors only. Real Microsoft Graph
-and PowerShell collectors plug into this lifecycle in later phases.
+Phase 7B keeps the lifecycle intact and swaps collector execution to the
+PowerShell runtime. Microsoft Graph collectors plug into this lifecycle later.
 """
 
 from __future__ import annotations
@@ -22,10 +22,10 @@ from app.db.models.assessment_rule import AssessmentRule
 from app.db.session import AsyncSessionLocal
 from app.services.audit_service import AuditEvent, audit_service
 from app.services.event_bus import emit_event
+from app.services.powershell import PowerShellExecutionEngine
 from app.services.registry_service import get_registry
 from app.services.runtime_recommendation_service import calculate_priority_score, generate_recommendations
 from app.services.runtime_scoring_service import apply_scores
-from app.services.simulated_collectors.collector_engine import run_simulated_collector
 
 
 RUNTIME_STAGES = {
@@ -90,7 +90,7 @@ async def ensure_registry_seeded(
             category=parameter.get("category") or parameter.get("domain") or "unclassified",
             collection_method=parameter.get("collection_method") or "unknown",
             collector_module=collector.get("collector_name")
-            or f"simulated.{parameter.get('collector_type') or 'unknown'}",
+            or f"powershell.{parameter.get('collector_type') or 'unknown'}",
             graph_endpoint=parameter.get("graph_endpoint") or None,
             copilot_relevance=parameter.get("copilot_relevance") or None,
             is_active=True,
@@ -239,12 +239,20 @@ async def _collect_findings(
     job: AssessmentJob,
 ) -> list[AssessmentFinding]:
     registry = get_registry()
+    powershell_engine = PowerShellExecutionEngine()
     parameter_by_key, rule_by_key = await ensure_registry_seeded(db)
     await db.execute(delete(AssessmentFinding).where(AssessmentFinding.assessment_id == assessment.id))
     await db.commit()
 
     parameters = registry.get_parameters()
     findings: list[AssessmentFinding] = []
+    telemetry_summary = {
+        "collector_runtime": "powershell",
+        "collector_failures": 0,
+        "collector_timeouts": 0,
+        "collector_retries": 0,
+        "collector_duration_ms": 0,
+    }
     total = max(1, len(parameters))
 
     for index, parameter_config in enumerate(parameters, start=1):
@@ -264,16 +272,86 @@ async def _collect_findings(
                 "parameter_key": key,
                 "collector": collector.get("collector_name"),
                 "collector_type": collector.get("collector_type"),
+                "runtime": "powershell",
                 "progress_pct": progress,
             },
         )
         await db.commit()
 
         try:
-            collector_result = await run_simulated_collector(
+            collector_result = await powershell_engine.run_collector(
+                tenant_id=assessment.tenant_id,
                 parameter=parameter_config,
                 collector=collector,
             )
+            telemetry = collector_result.get("telemetry") or {}
+            telemetry_summary["collector_retries"] += int(telemetry.get("retries") or 0)
+            telemetry_summary["collector_duration_ms"] += int(telemetry.get("duration_ms") or 0)
+            if telemetry.get("timed_out"):
+                telemetry_summary["collector_timeouts"] += 1
+                await emit_event(
+                    db,
+                    assessment_id=assessment.id,
+                    tenant_id=assessment.tenant_id,
+                    event_type="collector.timeout",
+                    severity="warning",
+                    payload={
+                        "parameter_key": key,
+                        "collector": collector.get("collector_name"),
+                        "timeout_count": telemetry.get("timeout_count", 1),
+                        "duration_ms": telemetry.get("duration_ms"),
+                        "progress_pct": progress,
+                    },
+                )
+            if telemetry.get("stdout_preview"):
+                await emit_event(
+                    db,
+                    assessment_id=assessment.id,
+                    tenant_id=assessment.tenant_id,
+                    event_type="collector.stdout",
+                    payload={
+                        "parameter_key": key,
+                        "collector": collector.get("collector_name"),
+                        "stdout_preview": telemetry.get("stdout_preview"),
+                        "duration_ms": telemetry.get("duration_ms"),
+                        "attempts": telemetry.get("attempts"),
+                        "progress_pct": progress,
+                    },
+                )
+            for warning in collector_result.get("warnings") or []:
+                await emit_event(
+                    db,
+                    assessment_id=assessment.id,
+                    tenant_id=assessment.tenant_id,
+                    event_type="collector.warning",
+                    severity="warning",
+                    payload={
+                        "parameter_key": key,
+                        "collector": collector.get("collector_name"),
+                        "warning": str(warning),
+                        "progress_pct": progress,
+                    },
+                )
+            if collector_result.get("errors"):
+                telemetry_summary["collector_failures"] += 1
+                await emit_event(
+                    db,
+                    assessment_id=assessment.id,
+                    tenant_id=assessment.tenant_id,
+                    event_type="collector.failed",
+                    severity="warning",
+                    payload={
+                        "parameter_key": key,
+                        "collector": collector.get("collector_name"),
+                        "errors": collector_result.get("errors"),
+                        "stderr": telemetry.get("stderr"),
+                        "exit_code": telemetry.get("exit_code"),
+                        "attempts": telemetry.get("attempts"),
+                        "retries": telemetry.get("retries"),
+                        "duration_ms": telemetry.get("duration_ms"),
+                        "progress_pct": progress,
+                    },
+                )
             db_parameter = parameter_by_key[key]
             db_rule = rule_by_key.get(key)
             finding = await _persist_finding(
@@ -306,6 +384,11 @@ async def _collect_findings(
                     "parameter_key": key,
                     "collector": collector.get("collector_name"),
                     "status": collector_result["status"],
+                    "runtime": "powershell",
+                    "duration_ms": telemetry.get("duration_ms"),
+                    "attempts": telemetry.get("attempts"),
+                    "retries": telemetry.get("retries"),
+                    "exit_code": telemetry.get("exit_code"),
                     "progress_pct": progress,
                 },
             )
@@ -318,6 +401,7 @@ async def _collect_findings(
             )
             await db.commit()
         except Exception as exc:
+            telemetry_summary["collector_failures"] += 1
             await emit_event(
                 db,
                 assessment_id=assessment.id,
@@ -333,6 +417,11 @@ async def _collect_findings(
             )
             await db.commit()
 
+    job.metadata_payload = {
+        **(job.metadata_payload or {}),
+        **telemetry_summary,
+    }
+    await db.commit()
     return findings
 
 
@@ -346,7 +435,7 @@ async def run_assessment_job(job_id: str, *, worker_id: str | None = None) -> di
         job.error_message = None
         job.metadata_payload = {
             **(job.metadata_payload or {}),
-            "runtime": "phase7a_simulated",
+            "runtime": "phase7b_powershell",
             "worker_id": worker_id,
         }
 

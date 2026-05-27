@@ -60,7 +60,7 @@ async def start_assessment(
         status="queued",
         current_stage="queued",
         progress_pct=0.0,
-        metadata_payload={"runtime": "phase7a_simulated", "enqueue_status": "pending"},
+        metadata_payload={"runtime": "phase7b_powershell", "enqueue_status": "pending"},
     )
     db.add(job)
     await db.flush()

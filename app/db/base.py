@@ -17,3 +17,4 @@ from app.db.models.assessment_event import AssessmentEvent
 from app.db.models.assessment_parameter import AssessmentParameter
 from app.db.models.assessment_recommendation import AssessmentRecommendation
 from app.db.models.assessment_rule import AssessmentRule
+from app.db.models.assessment_report import AssessmentReport

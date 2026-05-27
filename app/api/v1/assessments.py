@@ -4,7 +4,8 @@ Assessment API routes.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_active_user
@@ -21,7 +22,9 @@ from app.schemas.assessment import (
     AssessmentScoreResponse,
     AssessmentStartRequest,
 )
+from app.schemas.report import GenerateReportResponse, ReportBundleResponse
 from app.services import assessment_service
+from app.services.reporting import cra_report_service
 
 router = APIRouter(tags=["Assessments"])
 
@@ -181,6 +184,78 @@ async def get_assessment_score(
         message="Assessment score retrieved",
         data=AssessmentScoreResponse.model_validate(payload),
         request_id=request.state.request_id,
+    )
+
+
+@router.post(
+    "/assessments/{assessment_id}/generate-report",
+    response_model=SuccessResponse[GenerateReportResponse],
+)
+async def generate_assessment_report(
+    assessment_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> SuccessResponse[GenerateReportResponse]:
+    payload = await cra_report_service.generate_report_bundle(
+        db,
+        current_user=current_user,
+        assessment_id=assessment_id,
+    )
+    return success_response(
+        message="Assessment report generated",
+        data=GenerateReportResponse.model_validate(payload),
+        request_id=request.state.request_id,
+    )
+
+
+@router.get(
+    "/assessments/{assessment_id}/report",
+    response_model=SuccessResponse[ReportBundleResponse],
+)
+async def get_assessment_report(
+    assessment_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> SuccessResponse[ReportBundleResponse]:
+    payload = await cra_report_service.get_report_bundle(
+        db,
+        current_user=current_user,
+        assessment_id=assessment_id,
+    )
+    return success_response(
+        message="Assessment report retrieved",
+        data=ReportBundleResponse.model_validate(payload),
+        request_id=request.state.request_id,
+    )
+
+
+@router.get("/assessments/{assessment_id}/report/download")
+async def download_assessment_report(
+    assessment_id: UUID,
+    report_type: str = Query(default="pdf", pattern="^(pdf|docx)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> FileResponse:
+    try:
+        artifact = await cra_report_service.get_report_artifact(
+            db,
+            current_user=current_user,
+            assessment_id=assessment_id,
+            report_type=report_type,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    media_type = (
+        "application/pdf"
+        if report_type == "pdf"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    return FileResponse(
+        artifact.storage_path,
+        media_type=media_type,
+        filename=f"copilot-readiness-assessment.{report_type}",
     )
 
 

@@ -273,16 +273,30 @@ async def test_phase7_runtime_preserves_partial_collector_failures(
         tenant_id=auth_context["tenant"].tenant_id,
         user_id=auth_context["user"].id,
     )
-    original_collector = runtime_assessment_service.run_simulated_collector
     state = {"failed": False}
 
-    async def flaky_collector(*, parameter, collector):
-        if not state["failed"]:
-            state["failed"] = True
-            raise RuntimeError("collector unavailable")
-        return await original_collector(parameter=parameter, collector=collector)
+    class FlakyPowerShellEngine:
+        async def run_collector(self, *, tenant_id, parameter, collector):
+            if not state["failed"]:
+                state["failed"] = True
+                raise RuntimeError("collector unavailable")
+            return {
+                "parameter_key": parameter["parameter_key"],
+                "status": "pass",
+                "severity": parameter.get("severity") or "info",
+                "raw_value": {
+                    "parameter_key": parameter["parameter_key"],
+                    "powershell": True,
+                    "execution": {"duration_ms": 1, "attempts": 1, "retries": 0},
+                },
+                "evaluated_value": "PowerShell collector passed",
+                "score_contribution": 0.0,
+                "warnings": [],
+                "errors": [],
+                "telemetry": {"duration_ms": 1, "attempts": 1, "retries": 0},
+            }
 
-    monkeypatch.setattr(runtime_assessment_service, "run_simulated_collector", flaky_collector)
+    monkeypatch.setattr(runtime_assessment_service, "PowerShellExecutionEngine", FlakyPowerShellEngine)
 
     result = await runtime_assessment_service.run_assessment_job(str(job.id), worker_id="test-worker")
 

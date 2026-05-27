@@ -68,6 +68,7 @@ desktop.ini
 # =========================================
 *.log
 logs/
+storage/reports/
 
 # =========================================
 # Local Database
@@ -81,14 +82,6 @@ logs/
 # =========================================
 # (migrations/ is tracked — only ignore temp files)
 
-# =========================================
-# Frontend (cra-frontend)
-# =========================================
-cra-frontend/node_modules/
-cra-frontend/dist/
-cra-frontend/build/
-cra-frontend/.env
-cra-frontend/.env.local
 
 # =========================================
 # Misc
