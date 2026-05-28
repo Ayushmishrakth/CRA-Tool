@@ -14,9 +14,12 @@ Copilot Readiness Assessment (CRA) backend for Microsoft 365 readiness, assessme
 - Celery assessment runtime with Redis broker/result backend
 - Redis pub/sub event fanout
 - WebSocket runtime event streaming
-- Phase 7B PowerShell collector execution engine
+- Microsoft Graph runtime scaffolding with fail-closed auth behavior
+- Domain runtimes for Entra, Exchange, OneDrive, Purview, SharePoint, and Teams
+- Real PowerShell collector execution engine
+- CSV evidence ingestion and normalization
 - Runtime scoring and recommendation persistence
-- Phase 8A PDF/DOCX CRA report generation
+- PDF/DOCX CRA report generation and artifact persistence
 
 ## Architecture
 
@@ -26,8 +29,9 @@ React frontend
     -> CRA JWT auth
     -> tenant-scoped assessment APIs
     -> Celery assessment job
-    -> PowerShellExecutionEngine
-    -> collector JSON contract
+    -> registry collector manifest
+    -> Graph runtime or PowerShellExecutionEngine
+    -> CSV evidence ingestion
     -> findings
     -> scoring
     -> recommendations
@@ -43,19 +47,25 @@ Redis supports Celery and WebSocket event fanout.
 app/
 ├── api/v1/                     # API routers
 ├── config/assessment_registry/ # parameters, collectors, rules, recommendations
+├── config/collector_manifest.json
 ├── core/                       # settings, auth, security, Microsoft token helpers
 ├── db/models/                  # SQLAlchemy models
 ├── powershell/                 # PowerShell collector scripts
 ├── schemas/                    # Pydantic response/request schemas
 ├── services/
-│   ├── powershell/             # Phase 7B PowerShell runtime engine
-│   ├── reporting/              # Phase 8A report engine
-│   └── simulated_collectors/   # legacy/test collector helpers
+│   ├── csv_ingestion/          # CSV evidence parsers and normalizers
+│   ├── domain_runtimes/        # Entra/Exchange/OneDrive/Purview/SharePoint/Teams runtimes
+│   ├── findings/               # finding and recommendation engines
+│   ├── graph/                  # Graph auth/client/retry runtime
+│   ├── powershell/             # PowerShell runtime engine
+│   └── reporting/              # report engine
 └── tasks/                      # Celery task entry points
 
 migrations/                     # Alembic migrations
+scripts/install_m365_modules.ps1 # PowerShell module installer
 tests/                          # pytest validation suite
 storage/reports/                # generated reports, ignored by git
+artifacts/                      # local collector CSV/log output
 ```
 
 ## Requirements
@@ -63,6 +73,7 @@ storage/reports/                # generated reports, ignored by git
 - Python 3.11+
 - Redis 5+
 - PowerShell 7+ (`pwsh`) for real collector execution
+- Microsoft 365 PowerShell modules for live tenant collection
 - PostgreSQL for production, SQLite for local development
 
 Install dependencies:
@@ -81,6 +92,12 @@ cp .env.example .env
 
 Update `.env` with a real `SECRET_KEY`, Microsoft Entra app registration values, database URL, and Redis URL.
 
+Install the Microsoft 365 PowerShell modules before running live collectors:
+
+```powershell
+pwsh ./scripts/install_m365_modules.ps1
+```
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -94,13 +111,18 @@ Update `.env` with a real `SECRET_KEY`, Microsoft Entra app registration values,
 | `REDIS_URL` | Yes | Redis URL for pub/sub and default Celery broker/backend |
 | `CELERY_BROKER_URL` | No | Overrides `REDIS_URL` for Celery broker |
 | `CELERY_RESULT_BACKEND` | No | Overrides `REDIS_URL` for Celery result backend |
+| `CELERY_TASK_ALWAYS_EAGER` | No | Runs Celery tasks inline when set to true, useful for tests/local debugging |
+| `CELERY_TASK_TIME_LIMIT_SECONDS` | No | Hard task timeout for assessment jobs |
+| `CELERY_TASK_SOFT_TIME_LIMIT_SECONDS` | No | Soft task timeout for assessment jobs |
 | `SECRET_KEY` | Yes | CRA JWT signing key |
 | `ALGORITHM` | No | JWT algorithm, default `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No | Access token TTL |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | No | Refresh token TTL |
 | `AZURE_CLIENT_ID` | Yes | Microsoft Entra app client ID |
 | `AZURE_TENANT_ID` | Yes | Tenant ID, `common`, or `organizations` |
-| `AZURE_CLIENT_SECRET` | Optional | Server-side Microsoft Graph preparation |
+| `AZURE_CLIENT_SECRET` | Optional | Server-side Microsoft Graph/MSAL preparation |
+| `AZURE_AUTHORITY` | Optional | Overrides default `https://login.microsoftonline.com/{AZURE_TENANT_ID}` |
+| `AZURE_REDIRECT_URI` | Optional | Frontend redirect URI for Microsoft login callback |
 | `ORGANIZATION_NAME` | No | Default customer/report organization name |
 
 ## Run Locally
@@ -175,10 +197,11 @@ http://127.0.0.1:8000/docs
 
 ## Assessment Runtime
 
-The runtime is registry-driven. Collector definitions are loaded from:
+The runtime is registry-driven. Assessment definitions are loaded from:
 
 ```text
 app/config/assessment_registry/collectors.json
+app/config/collector_manifest.json
 ```
 
 Lifecycle stages:
@@ -204,36 +227,61 @@ Runtime events are persisted and streamed over WebSockets. Key events include:
 
 ## PowerShell Collectors
 
-Phase 7B replaces simulated collectors with real asynchronous PowerShell subprocess execution. Collectors must return structured JSON only:
+Simulated collectors have been removed. The backend runs real domain collector scripts through isolated asynchronous `pwsh` subprocesses, then ingests generated CSV evidence into normalized finding inputs.
+
+Canonical collector scripts live under:
+
+```text
+app/powershell/common/
+app/powershell/entra/
+app/powershell/exchange/
+app/powershell/onedrive/
+app/powershell/purview/
+app/powershell/sharepoint/
+app/powershell/teams/
+```
+
+The collector manifest maps each parameter to a service, master script, CSV output file, parser, rule, recommendation, severity, and timeout. The current manifest covers 65 collectors across Entra, Exchange, OneDrive, Purview, SharePoint, Teams, and M365 baseline checks.
+
+CSV evidence is parsed by service-specific parsers in:
+
+```text
+app/services/csv_ingestion/
+```
+
+Normalized evidence rows follow this internal shape:
 
 ```json
 {
-  "status": "success",
-  "collector": "users_without_mfa",
-  "tenant_id": "tenant-id",
-  "timestamp": "2026-05-27T00:00:00Z",
-  "findings": [],
-  "metrics": {},
-  "warnings": [],
-  "errors": []
+  "parameter_key": "users_without_mfa",
+  "service": "entra",
+  "status": "collected",
+  "raw_value": {},
+  "evaluated_value": {},
+  "severity": "high",
+  "score_contribution": 0.0,
+  "telemetry": {
+    "source_script": "app/powershell/entra/entra_master.ps1",
+    "generated_files": ["artifacts/mfa_status.csv"]
+  }
 }
 ```
 
-Implemented starter scripts live under:
+The execution engine enforces subprocess isolation, timeout cleanup, retry handling, stdout/stderr capture, result parsing, telemetry, artifact persistence, and failure isolation.
+
+## Microsoft Graph Runtime
+
+Graph support is implemented through lightweight `httpx` client, retry, and runtime services in:
 
 ```text
-app/powershell/identity/
-app/powershell/security/
-app/powershell/compliance/
-app/powershell/collaboration/
-app/powershell/licensing/
+app/services/graph/
 ```
 
-The execution engine enforces subprocess isolation, timeout cleanup, retry handling, stdout/stderr capture, JSON result parsing, telemetry, and failure isolation.
+Graph authentication currently fails closed when delegated auth is not configured for a tenant, so collectors do not produce simulated or untrusted findings.
 
 ## Reports
 
-Phase 8A generates enterprise CRA reports from assessment findings, scoring, recommendations, and runtime evidence.
+The reporting engine generates enterprise CRA reports from assessment findings, scoring, recommendations, and runtime evidence.
 
 Generated artifacts:
 
@@ -281,4 +329,4 @@ pytest -q tests/test_phase8_reports.py
 
 - `storage/reports/`, local SQLite databases, virtual environments, and `.env` files are ignored by git.
 - The separate React/Vite frontend should live outside this backend repository, for example `/home/herb/cra-frontend`.
-- Real Microsoft Graph collectors are reserved for a later phase; current PowerShell starter collectors use safe local/mock data while exercising real subprocess execution.
+- Collector execution is fail-closed: missing scripts, missing CSV evidence, missing parsers, and unavailable Graph auth are reported as not collected instead of producing simulated findings.

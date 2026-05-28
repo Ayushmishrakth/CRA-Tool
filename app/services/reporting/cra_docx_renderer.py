@@ -25,7 +25,7 @@ def _render_python_docx(path: Path, report: dict[str, Any]) -> Path:
     doc.add_paragraph(f"Assessment date: {summary.get('assessment_date') or '-'}")
     doc.add_paragraph("Prepared by: CRA Platform")
     doc.add_page_break()
-    doc.add_paragraph("Table of Contents placeholder")
+    doc.add_paragraph("Table of Contents")
     doc.add_heading("Executive Summary", 1)
     doc.add_paragraph(narrative["executive_summary"])
     table = doc.add_table(rows=1, cols=2)
@@ -74,7 +74,7 @@ def _render_minimal_docx(path: Path, report: dict[str, Any]) -> Path:
         _p(f"Prepared for: {summary['customer_name']}"),
         _p(f"Assessment date: {summary.get('assessment_date') or '-'}"),
         _p("Prepared by: CRA Platform"),
-        _p("Table of Contents placeholder", "Heading1"),
+        _p("Table of Contents", "Heading1"),
         _p("Executive Summary", "Heading1"),
         _p(narrative["executive_summary"]),
         _p("Analytics & Charts", "Heading1"),

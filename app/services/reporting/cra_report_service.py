@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models.assessment_finding import AssessmentFinding
+from app.db.models.assessment_artifact import AssessmentArtifact
 from app.db.models.assessment_recommendation import AssessmentRecommendation
 from app.db.models.assessment_report import AssessmentReport
 from app.db.models.user import User
@@ -135,11 +136,12 @@ async def build_report_data(
     assessment = await get_assessment(db, current_user=current_user, assessment_id=assessment_id)
     findings = await _load_findings(db, assessment.id)
     recommendations = await _load_recommendations(db, assessment.id, assessment.tenant_id)
+    artifacts = await _load_artifacts(db, assessment.id, assessment.tenant_id)
     analytics_raw = aggregate_findings(findings)
     summary = build_summary(assessment=assessment, findings=findings, recommendations=recommendations)
     narrative = build_narrative(summary=summary, analytics=analytics_raw)
     analytics = build_chart_data(summary=summary, analytics=analytics_raw)
-    sections = _build_sections(findings, recommendations)
+    sections = _build_sections(findings, recommendations, artifacts)
     return {
         "assessment": assessment,
         "summary": summary,
@@ -149,7 +151,8 @@ async def build_report_data(
         "metadata": {
             "finding_count": len(findings),
             "recommendation_count": len(recommendations),
-            "sample_reference": "/home/herb/Downloads/sample.docx",
+            "failed_collector_count": len([item for item in artifacts if item.status != "collected"]),
+            "evidence_policy": "missing or failed collectors are reported as NOT COLLECTED",
         },
     }
 
@@ -177,9 +180,24 @@ async def _load_recommendations(
     return list(result.scalars().all())
 
 
+async def _load_artifacts(
+    db: AsyncSession,
+    assessment_id: UUID,
+    tenant_id: str,
+) -> list[AssessmentArtifact]:
+    result = await db.execute(
+        select(AssessmentArtifact).where(
+            AssessmentArtifact.assessment_id == assessment_id,
+            AssessmentArtifact.tenant_id == tenant_id,
+        )
+    )
+    return list(result.scalars().all())
+
+
 def _build_sections(
     findings: list[AssessmentFinding],
     recommendations: list[AssessmentRecommendation],
+    artifacts: list[AssessmentArtifact],
 ) -> dict[str, list[dict[str, Any]]]:
     rec_by_key = {item.parameter_key: item for item in recommendations}
     sections = {service: [] for service in SERVICE_ORDER}
@@ -202,6 +220,33 @@ def _build_sections(
             "documentation_link": "",
         }
         sections.setdefault(service, []).append(item)
+    collected_keys = {
+        (finding.raw_value or {}).get("parameter_key") or getattr(finding.parameter, "parameter_key", None)
+        for finding in findings
+    }
+    for artifact in artifacts:
+        if artifact.status == "collected" or artifact.parameter_key in collected_keys:
+            continue
+        service = _service_for_key(artifact.parameter_key, artifact.service)
+        sections.setdefault(service, []).append(
+            {
+                "title": artifact.parameter_key,
+                "service": service,
+                "pillar": artifact.service or "Unknown",
+                "severity": "info",
+                "finding": "NOT COLLECTED",
+                "description": "Collector did not produce trusted evidence.",
+                "risk": "No readiness conclusion was generated for this control because evidence was unavailable.",
+                "recommendation": "Resolve collector configuration and re-run the assessment.",
+                "evidence": {
+                    "status": artifact.status,
+                    "error": artifact.stderr,
+                    "source_script": artifact.source_script,
+                    "source_csv": artifact.source_csv,
+                },
+                "documentation_link": "",
+            }
+        )
     return {service: sections.get(service, []) for service in SERVICE_ORDER if sections.get(service)}
 
 

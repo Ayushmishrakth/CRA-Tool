@@ -98,14 +98,14 @@ def contract_to_collector_result(
     status = (finding.get("status") or contract.get("status") or "fail").lower()
     if status == "success":
         status = "pass"
-    if status not in {"pass", "warning", "fail"}:
+    if status not in {"pass", "warning", "fail", "not_collected"}:
         status = "fail" if contract.get("errors") else "warning"
 
     finding_severity = (finding.get("severity") or severity).lower()
     score_contribution = finding.get("score_contribution")
     if score_contribution is None:
         score_contribution = float(SEVERITY_RANK.get(finding_severity, 1))
-        if status == "pass":
+        if status in {"pass", "not_collected"}:
             score_contribution = 0.0
         elif status == "warning":
             score_contribution = round(score_contribution * 0.45, 2)

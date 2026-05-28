@@ -18,3 +18,4 @@ from app.db.models.assessment_parameter import AssessmentParameter
 from app.db.models.assessment_recommendation import AssessmentRecommendation
 from app.db.models.assessment_rule import AssessmentRule
 from app.db.models.assessment_report import AssessmentReport
+from app.db.models.assessment_artifact import AssessmentArtifact

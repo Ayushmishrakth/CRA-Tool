@@ -1,7 +1,8 @@
 # CRA Backend Requirements
 # Python 3.11+ compatible dependency ranges for the CRA backend:
-# auth, tenant isolation, assessment runtime, Redis/Celery orchestration,
-# PowerShell collector execution, WebSocket events, and Phase 8 reporting.
+# auth, tenant isolation, registry-driven assessment runtime, Redis/Celery
+# orchestration, PowerShell/Graph collectors, CSV evidence ingestion,
+# WebSocket events, and enterprise reporting.
 
 # --- API runtime ---
 fastapi>=0.115.0,<1.0.0
@@ -26,13 +27,8 @@ PyJWT[crypto]>=2.8.0,<3.0.0
 cryptography>=42.0.0,<45.0.0
 msal>=1.28.0,<2.0.0
 
-# --- Microsoft Graph preparation ---
+# --- Microsoft Graph HTTP runtime ---
 httpx>=0.27.0,<1.0.0
-msgraph-sdk>=1.0.0,<2.0.0
-
-# --- Registry compilation ---
-pandas>=2.2.0,<3.0.0
-openpyxl>=3.1.0,<4.0.0
 
 # --- Distributed runtime and Redis pub/sub ---
 celery>=5.4.0,<6.0.0

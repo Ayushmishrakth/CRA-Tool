@@ -15,6 +15,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.assessment import Assessment
+from app.db.models.assessment_artifact import AssessmentArtifact
 from app.db.models.assessment_finding import AssessmentFinding
 from app.db.models.assessment_job import AssessmentJob
 from app.db.models.assessment_parameter import AssessmentParameter
@@ -210,6 +211,49 @@ async def _persist_finding(
     return finding
 
 
+async def _persist_artifact(
+    db: AsyncSession,
+    *,
+    assessment: Assessment,
+    job: AssessmentJob,
+    parameter_key: str,
+    collector: dict[str, Any],
+    collector_result: dict[str, Any] | None = None,
+    status: str,
+    artifact_type: str = "collector_execution",
+    error: str | None = None,
+) -> AssessmentArtifact:
+    telemetry = (collector_result or {}).get("telemetry") or {}
+    raw_value = (collector_result or {}).get("raw_value") or {}
+    contract = raw_value.get("collector_contract") if isinstance(raw_value, dict) else None
+    artifact = AssessmentArtifact(
+        assessment_id=assessment.id,
+        job_id=job.id,
+        tenant_id=assessment.tenant_id,
+        parameter_key=parameter_key,
+        service=collector.get("service") or collector.get("collector_type"),
+        artifact_type=artifact_type,
+        source_script=telemetry.get("source_script"),
+        source_csv=(
+            (telemetry.get("generated_files") or [None])[0]
+            if isinstance(telemetry.get("generated_files"), list)
+            else collector.get("output_file") or None
+        ),
+        status=status,
+        stdout=telemetry.get("stdout") or telemetry.get("stdout_preview"),
+        stderr=telemetry.get("stderr") or error,
+        payload={
+            "collector": collector,
+            "result": collector_result,
+            "contract": contract,
+            "error": error,
+        },
+    )
+    db.add(artifact)
+    await db.flush()
+    return artifact
+
+
 def _finding_payload(
     finding: AssessmentFinding,
     parameter: AssessmentParameter,
@@ -242,6 +286,7 @@ async def _collect_findings(
     powershell_engine = PowerShellExecutionEngine()
     parameter_by_key, rule_by_key = await ensure_registry_seeded(db)
     await db.execute(delete(AssessmentFinding).where(AssessmentFinding.assessment_id == assessment.id))
+    await db.execute(delete(AssessmentArtifact).where(AssessmentArtifact.assessment_id == assessment.id))
     await db.commit()
 
     parameters = registry.get_parameters()
@@ -283,6 +328,7 @@ async def _collect_findings(
                 tenant_id=assessment.tenant_id,
                 parameter=parameter_config,
                 collector=collector,
+                assessment_id=str(assessment.id),
             )
             telemetry = collector_result.get("telemetry") or {}
             telemetry_summary["collector_retries"] += int(telemetry.get("retries") or 0)
@@ -334,6 +380,15 @@ async def _collect_findings(
                 )
             if collector_result.get("errors"):
                 telemetry_summary["collector_failures"] += 1
+                await _persist_artifact(
+                    db,
+                    assessment=assessment,
+                    job=job,
+                    parameter_key=key,
+                    collector=collector,
+                    collector_result=collector_result,
+                    status="failed",
+                )
                 await emit_event(
                     db,
                     assessment_id=assessment.id,
@@ -350,8 +405,51 @@ async def _collect_findings(
                         "retries": telemetry.get("retries"),
                         "duration_ms": telemetry.get("duration_ms"),
                         "progress_pct": progress,
+                        "finding_generated": False,
                     },
                 )
+                await db.commit()
+                continue
+            if collector_result.get("status") == "not_collected":
+                telemetry_summary["collector_failures"] += 1
+                await _persist_artifact(
+                    db,
+                    assessment=assessment,
+                    job=job,
+                    parameter_key=key,
+                    collector=collector,
+                    collector_result=collector_result,
+                    status="evidence_collected",
+                )
+                await emit_event(
+                    db,
+                    assessment_id=assessment.id,
+                    tenant_id=assessment.tenant_id,
+                    event_type="csv.detected",
+                    payload={
+                        "parameter_key": key,
+                        "collector": collector.get("collector_name"),
+                        "generated_files": (
+                            collector_result.get("raw_value", {})
+                            .get("collector_contract", {})
+                            .get("metrics", {})
+                            .get("generated_files", [])
+                        ),
+                        "finding_generated": False,
+                        "progress_pct": progress,
+                    },
+                )
+                await db.commit()
+                continue
+            await _persist_artifact(
+                db,
+                assessment=assessment,
+                job=job,
+                parameter_key=key,
+                collector=collector,
+                collector_result=collector_result,
+                status="collected",
+            )
             db_parameter = parameter_by_key[key]
             db_rule = rule_by_key.get(key)
             finding = await _persist_finding(
@@ -402,6 +500,15 @@ async def _collect_findings(
             await db.commit()
         except Exception as exc:
             telemetry_summary["collector_failures"] += 1
+            await _persist_artifact(
+                db,
+                assessment=assessment,
+                job=job,
+                parameter_key=key,
+                collector=collector,
+                status="failed",
+                error=str(exc),
+            )
             await emit_event(
                 db,
                 assessment_id=assessment.id,
@@ -420,6 +527,10 @@ async def _collect_findings(
     job.metadata_payload = {
         **(job.metadata_payload or {}),
         **telemetry_summary,
+        "collector_total": len(parameters),
+        "collector_collected": len(findings),
+        "collector_incomplete": telemetry_summary["collector_failures"]
+        + telemetry_summary["collector_timeouts"],
     }
     await db.commit()
     return findings
@@ -461,6 +572,54 @@ async def run_assessment_job(job_id: str, *, worker_id: str | None = None) -> di
             )
 
             findings = await _collect_findings(db, assessment=assessment, job=job)
+            incomplete_count = int((job.metadata_payload or {}).get("collector_incomplete") or 0)
+            if incomplete_count:
+                assessment.status = "incomplete"
+                assessment.progress_pct = RUNTIME_STAGES["completed"][1]
+                job.status = "incomplete"
+                job.current_stage = "incomplete"
+                job.progress_pct = RUNTIME_STAGES["completed"][1]
+                job.completed_at = _utc_now()
+                job.error_message = (
+                    f"{incomplete_count} collector(s) failed or were not collected; "
+                    "scoring and recommendations were not generated"
+                )
+                await emit_event(
+                    db,
+                    assessment_id=assessment.id,
+                    tenant_id=assessment.tenant_id,
+                    event_type="assessment.incomplete",
+                    severity="warning",
+                    payload={
+                        "job_id": str(job.id),
+                        "collector_total": (job.metadata_payload or {}).get("collector_total"),
+                        "collector_collected": len(findings),
+                        "collector_incomplete": incomplete_count,
+                        "progress_pct": RUNTIME_STAGES["completed"][1],
+                    },
+                )
+                await audit_service.log_event(
+                    db,
+                    tenant_id=assessment.tenant_id,
+                    event=AuditEvent.ASSESSMENT_FAILED,
+                    action="assessment.incomplete",
+                    user_id=assessment.triggered_by_user_id,
+                    resource="assessments",
+                    metadata={
+                        "assessment_id": str(assessment.id),
+                        "job_id": str(job.id),
+                        "collector_incomplete": incomplete_count,
+                    },
+                )
+                await db.commit()
+                return {
+                    "assessment_id": str(assessment.id),
+                    "job_id": str(job.id),
+                    "status": assessment.status,
+                    "progress_pct": assessment.progress_pct,
+                    "findings": len(findings),
+                    "collector_incomplete": incomplete_count,
+                }
 
             await _set_stage(
                 db,

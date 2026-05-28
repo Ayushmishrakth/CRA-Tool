@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class DashboardSummaryResponse(BaseModel):
-    """Dashboard overview payload (placeholder for Phase 3+)."""
+    """Dashboard overview payload."""
 
     message: str = Field(..., description="Placeholder dashboard summary")
     module: str = Field(default="dashboard", description="CRA module identifier")

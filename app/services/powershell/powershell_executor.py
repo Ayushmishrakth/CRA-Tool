@@ -21,6 +21,8 @@ class PowerShellExecution:
     parameter_key: str
     parameter: dict[str, Any]
     collector: dict[str, Any]
+    assessment_id: str | None = None
+    output_root: str = "artifacts"
     timeout_seconds: float = 30.0
     max_retries: int = 0
 
@@ -47,6 +49,7 @@ class PowerShellExecutionResult:
             "timed_out": self.timed_out,
             "exit_code": self.exit_code,
             "stderr": self.stderr[-4000:] if self.stderr else "",
+            "stdout": self.stdout[-20000:] if self.stdout else "",
             "stdout_preview": self.stdout[:1200] if self.stdout else "",
         }
 
@@ -90,6 +93,10 @@ class PowerShellExecutor:
             parameter_json,
             "-CollectorJson",
             collector_json,
+            "-AssessmentId",
+            execution.assessment_id or "adhoc",
+            "-OutputRoot",
+            execution.output_root,
         ]
 
     async def _run_once(

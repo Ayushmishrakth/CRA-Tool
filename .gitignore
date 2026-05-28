@@ -68,7 +68,14 @@ desktop.ini
 # =========================================
 *.log
 logs/
-storage/reports/
+
+# =========================================
+# Runtime Artifacts
+# =========================================
+artifacts/
+storage/
+!storage/.gitkeep
+!storage/reports/.gitkeep
 
 # =========================================
 # Local Database
@@ -76,6 +83,14 @@ storage/reports/
 *.db
 *.db-journal
 *.sqlite3
+*.sqlite
+
+# =========================================
+# Local Runtime State
+# =========================================
+celerybeat-schedule
+celerybeat.pid
+worker.pid
 
 # =========================================
 # Alembic

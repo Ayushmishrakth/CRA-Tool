@@ -39,7 +39,6 @@ def _render_reportlab(path: Path, report: dict[str, Any]) -> Path:
     story.append(Paragraph(f"Assessment date: {summary.get('assessment_date') or '-'}", styles["Normal"]))
     story.append(Paragraph("Prepared by: CRA Platform", styles["Normal"]))
     story.append(Spacer(1, 36))
-    story.append(Paragraph("Logo placeholder", styles["Italic"]))
     story.append(PageBreak())
 
     story.append(Paragraph("Executive Summary", styles["Heading1"]))
