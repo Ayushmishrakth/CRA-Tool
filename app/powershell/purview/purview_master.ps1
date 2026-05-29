@@ -10,11 +10,12 @@ param(
 
 . (Join-Path $PSScriptRoot "../common/cra_common.ps1")
 Assert-CraModule "ExchangeOnlineManagement"
+$collector = $CollectorJson | ConvertFrom-Json
 
 $out = Initialize-CraArtifactDirectory -OutputRoot $OutputRoot -AssessmentId $AssessmentId -Domain "purview"
 $files = New-Object System.Collections.Generic.List[string]
 
-Connect-IPPSSession -ErrorAction Stop | Out-Null
+Connect-CraPurview -Collector $collector
 
 $dlp = Get-DlpCompliancePolicy | Select-Object Name,Mode,Enabled,Workload,ExchangeLocation,SharePointLocation,OneDriveLocation,TeamsLocation
 $path = Join-Path $out "dlp_policies.csv"; Export-CraCsv $dlp $path; $files.Add($path)

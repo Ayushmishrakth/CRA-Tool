@@ -12,10 +12,12 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.tenant import (
     TenantConnectRequest,
+    TenantDeploymentRequest,
+    TenantDeploymentResponse,
     TenantPermissionsResponse,
     TenantResponse,
 )
-from app.services import tenant_service
+from app.services import tenant_deployment_service, tenant_service
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 
@@ -113,5 +115,51 @@ async def get_tenant_permissions(
             consent_status=tenant.consent_status,
             status=tenant.status,
         ),
+        request_id=request.state.request_id,
+    )
+
+
+@router.post(
+    "/deployment/start",
+    response_model=SuccessResponse[TenantDeploymentResponse],
+)
+async def start_tenant_deployment(
+    payload: TenantDeploymentRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> SuccessResponse[TenantDeploymentResponse]:
+    result = await tenant_deployment_service.deploy_tenant_access(
+        db,
+        current_user=current_user,
+        tenant_id=payload.tenant_id,
+        graph_access_token=payload.graph_access_token,
+    )
+    return success_response(
+        message="Tenant deployment started",
+        data=TenantDeploymentResponse(**result),
+        request_id=request.state.request_id,
+    )
+
+
+@router.post(
+    "/deployment/validate-consent",
+    response_model=SuccessResponse[TenantDeploymentResponse],
+)
+async def validate_tenant_consent(
+    payload: TenantDeploymentRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> SuccessResponse[TenantDeploymentResponse]:
+    result = await tenant_deployment_service.validate_admin_consent(
+        db,
+        current_user=current_user,
+        tenant_id=payload.tenant_id,
+        graph_access_token=payload.graph_access_token,
+    )
+    return success_response(
+        message="Tenant admin consent validated",
+        data=TenantDeploymentResponse(**result),
         request_id=request.state.request_id,
     )

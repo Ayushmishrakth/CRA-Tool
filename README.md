@@ -75,13 +75,60 @@ artifacts/                      # local collector CSV/log output
 - PowerShell 7+ (`pwsh`) for real collector execution
 - Microsoft 365 PowerShell modules for live tenant collection
 - PostgreSQL for production, SQLite for local development
+- Node.js 20+ and npm are required by the separate `CRA-frontend` app
 
-Install dependencies:
+## Transfer to a New Laptop
+
+Copy or push the source code, not local runtime folders. Keep these files and folders:
+
+```text
+app/
+migrations/
+scripts/
+tests/
+.env.example
+.gitignore
+alembic.ini
+pytest.ini
+README.md
+requirements.txt
+```
+
+Do not copy these local/generated items:
+
+```text
+venv/
+.env
+cra.db
+__pycache__/
+.pytest_cache/
+artifacts/
+storage/
+*.log
+```
+
+On the new laptop, install prerequisites:
+
+- Python 3.11 or newer
+- Redis
+- PowerShell 7 (`pwsh`)
+- Git
+- Microsoft 365 PowerShell modules if running live collectors
+
+Create a fresh backend environment:
 
 ```bash
+cd CRA-Tool
 python -m venv venv
 source venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+On Windows PowerShell, activate the environment with:
+
+```powershell
+.\venv\Scripts\Activate.ps1
 ```
 
 Copy the example environment:
@@ -132,6 +179,8 @@ Start Redis:
 ```bash
 redis-server
 ```
+
+If Redis is not available yet and you only want basic local testing, set `CELERY_TASK_ALWAYS_EAGER=True` in `.env`.
 
 Run database migrations:
 

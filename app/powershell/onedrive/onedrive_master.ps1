@@ -10,11 +10,12 @@ param(
 
 . (Join-Path $PSScriptRoot "../common/cra_common.ps1")
 Assert-CraModule "Microsoft.Graph"
+$collector = $CollectorJson | ConvertFrom-Json
 
 $out = Initialize-CraArtifactDirectory -OutputRoot $OutputRoot -AssessmentId $AssessmentId -Domain "onedrive"
 $files = New-Object System.Collections.Generic.List[string]
 
-Connect-MgGraph -TenantId $TenantId -Scopes @("Reports.Read.All","Files.Read.All","Sites.Read.All") -NoWelcome -ErrorAction Stop | Out-Null
+Connect-CraGraph -TenantId $TenantId -Scopes @("Reports.Read.All","Files.Read.All","Sites.Read.All") -Collector $collector | Out-Null
 
 $period = "D180"
 $usagePath = Join-Path $out "onedrive_usage.csv"

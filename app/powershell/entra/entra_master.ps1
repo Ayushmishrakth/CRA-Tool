@@ -11,6 +11,7 @@ param(
 . (Join-Path $PSScriptRoot "../common/cra_common.ps1")
 Assert-CraModule "Microsoft.Graph"
 Assert-CraModule "Microsoft.Graph.Beta"
+$collector = $CollectorJson | ConvertFrom-Json
 
 $out = Initialize-CraArtifactDirectory -OutputRoot $OutputRoot -AssessmentId $AssessmentId -Domain "entra"
 $scopes = @(
@@ -21,7 +22,7 @@ $scopes = @(
   "AuditLog.Read.All",
   "UserAuthenticationMethod.Read.All"
 )
-Connect-MgGraph -TenantId $TenantId -Scopes $scopes -NoWelcome -ErrorAction Stop | Out-Null
+Connect-CraGraph -TenantId $TenantId -Scopes $scopes -Collector $collector | Out-Null
 
 $files = New-Object System.Collections.Generic.List[string]
 

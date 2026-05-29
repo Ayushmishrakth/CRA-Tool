@@ -27,11 +27,20 @@ ENV/
 # Environment Variables / Secrets
 # =========================================
 .env
+.env.*
 .env.local
 .env.*.local
 .env.production
 .env.staging
 !.env.example
+*.pem
+*.key
+*.pfx
+*.crt
+*.cer
+*.token
+token_cache*
+msal_cache*
 
 # =========================================
 # IDE / Editor
@@ -68,6 +77,8 @@ desktop.ini
 # =========================================
 *.log
 logs/
+*.out
+*.err
 
 # =========================================
 # Runtime Artifacts
@@ -76,6 +87,9 @@ artifacts/
 storage/
 !storage/.gitkeep
 !storage/reports/.gitkeep
+reports/
+exports/
+downloads/
 
 # =========================================
 # Local Database
@@ -91,6 +105,9 @@ storage/
 celerybeat-schedule
 celerybeat.pid
 worker.pid
+*.pid
+.celery/
+.redis/
 
 # =========================================
 # Alembic
@@ -105,3 +122,4 @@ worker.pid
 *.tmp
 *.temp
 .cache/
+pip-wheel-metadata/

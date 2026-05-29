@@ -10,11 +10,12 @@ param(
 
 . (Join-Path $PSScriptRoot "../common/cra_common.ps1")
 Assert-CraModule "ExchangeOnlineManagement"
+$collector = $CollectorJson | ConvertFrom-Json
 
 $out = Initialize-CraArtifactDirectory -OutputRoot $OutputRoot -AssessmentId $AssessmentId -Domain "exchange"
 $files = New-Object System.Collections.Generic.List[string]
 
-Connect-ExchangeOnline -ShowBanner:$false -ErrorAction Stop
+Connect-CraExchange -Collector $collector
 
 $mailboxes = Get-EXOMailbox -ResultSize Unlimited -Properties AuditEnabled,ForwardingSmtpAddress,DeliverToMailboxAndForward,RecipientTypeDetails |
   Select-Object ExternalDirectoryObjectId,DisplayName,UserPrincipalName,RecipientTypeDetails,AuditEnabled

@@ -1,5 +1,12 @@
 # CRA Backend Requirements
-# Python 3.11+ compatible dependency ranges for the CRA backend:
+# Python 3.11+ compatible dependency ranges for the CRA backend.
+# On a new laptop, create a fresh virtual environment and run:
+#   python -m pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# Do not copy the local venv/ folder between machines.
+#
+# These are direct runtime/test dependencies for:
 # auth, tenant isolation, registry-driven assessment runtime, Redis/Celery
 # orchestration, PowerShell/Graph collectors, CSV evidence ingestion,
 # WebSocket events, and enterprise reporting.

@@ -28,7 +28,15 @@ def _render_reportlab(path: Path, report: dict[str, Any]) -> Path:
     from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     styles = getSampleStyleSheet()
-    doc = SimpleDocTemplate(str(path), pagesize=A4, rightMargin=42, leftMargin=42, topMargin=42, bottomMargin=42)
+    doc = SimpleDocTemplate(
+        str(path),
+        pagesize=A4,
+        rightMargin=42,
+        leftMargin=42,
+        topMargin=42,
+        bottomMargin=42,
+        pageCompression=0,
+    )
     story = []
     summary = report["summary"]
     narrative = report["narrative"]

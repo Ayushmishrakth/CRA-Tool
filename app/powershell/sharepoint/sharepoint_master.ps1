@@ -20,8 +20,8 @@ if (-not $collector.admin_url) {
 $out = Initialize-CraArtifactDirectory -OutputRoot $OutputRoot -AssessmentId $AssessmentId -Domain "sharepoint"
 $files = New-Object System.Collections.Generic.List[string]
 
-Connect-MgGraph -TenantId $TenantId -Scopes @("Reports.Read.All","Sites.Read.All","Directory.Read.All") -NoWelcome -ErrorAction Stop | Out-Null
-Connect-PnPOnline -Url $collector.admin_url -Interactive -ErrorAction Stop
+Connect-CraGraph -TenantId $TenantId -Scopes @("Reports.Read.All","Sites.Read.All","Directory.Read.All") -Collector $collector | Out-Null
+Connect-CraPnP -Url $collector.admin_url -Collector $collector
 
 $sites = Get-PnPTenantSite -Detailed |
   Select-Object Url,Title,Owner,Template,SharingCapability,StorageUsageCurrent,LastContentModifiedDate,LockState,SensitivityLabel

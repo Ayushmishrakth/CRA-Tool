@@ -20,6 +20,7 @@ from app.db.models.assessment_finding import AssessmentFinding
 from app.db.models.assessment_job import AssessmentJob
 from app.db.models.assessment_parameter import AssessmentParameter
 from app.db.models.assessment_rule import AssessmentRule
+from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.services.audit_service import AuditEvent, audit_service
 from app.services.event_bus import emit_event
@@ -691,6 +692,30 @@ async def run_assessment_job(job_id: str, *, worker_id: str | None = None) -> di
                         "progress_pct": RUNTIME_STAGES["recommendations"][1],
                     },
                 )
+            await db.commit()
+
+            report_payload = None
+            report_user = await db.get(User, assessment.triggered_by_user_id)
+            if report_user is None:
+                raise RuntimeError("Assessment report generation failed: triggering user was not found")
+            from app.services.reporting import cra_report_service
+
+            report_payload = await cra_report_service.generate_report_bundle(
+                db,
+                current_user=report_user,
+                assessment_id=assessment.id,
+            )
+            await emit_event(
+                db,
+                assessment_id=assessment.id,
+                tenant_id=assessment.tenant_id,
+                event_type="report.generated",
+                payload={
+                    "assessment_id": str(assessment.id),
+                    "artifact_count": len(report_payload.get("artifacts") or []),
+                    "progress_pct": 98.0,
+                },
+            )
             await db.commit()
 
             assessment.status = "completed"

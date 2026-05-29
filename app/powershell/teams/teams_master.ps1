@@ -11,12 +11,13 @@ param(
 . (Join-Path $PSScriptRoot "../common/cra_common.ps1")
 Assert-CraModule "MicrosoftTeams"
 Assert-CraModule "Microsoft.Graph"
+$collector = $CollectorJson | ConvertFrom-Json
 
 $out = Initialize-CraArtifactDirectory -OutputRoot $OutputRoot -AssessmentId $AssessmentId -Domain "teams"
 $files = New-Object System.Collections.Generic.List[string]
 
-Connect-MicrosoftTeams -TenantId $TenantId -ErrorAction Stop | Out-Null
-Connect-MgGraph -TenantId $TenantId -Scopes @("Reports.Read.All","Group.Read.All","Team.ReadBasic.All") -NoWelcome -ErrorAction Stop | Out-Null
+Connect-CraTeams -TenantId $TenantId -Collector $collector
+Connect-CraGraph -TenantId $TenantId -Scopes @("Reports.Read.All","Group.Read.All","Team.ReadBasic.All") -Collector $collector | Out-Null
 
 $teams = Get-Team | Select-Object GroupId,DisplayName,Visibility,Archived,MailNickName,Description
 $path = Join-Path $out "teams_inventory.csv"; Export-CraCsv $teams $path; $files.Add($path)

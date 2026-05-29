@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,10 +60,14 @@ class PowerShellExecutor:
     def __init__(self, *, executable: str = "pwsh") -> None:
         self.executable = executable
 
-    def _resolve_executable(self) -> str | None:
+    def _resolve_executable(self) -> list[str] | None:
         if Path(self.executable).exists():
-            return self.executable
-        return shutil.which(self.executable)
+            path = Path(self.executable)
+            if os.name == "nt" and path.suffix.lower() not in {".exe", ".bat", ".cmd", ".ps1"}:
+                return [sys.executable, str(path)]
+            return [self.executable]
+        resolved = shutil.which(self.executable)
+        return [resolved] if resolved else None
 
     @staticmethod
     def _safe_script_path(path: Path) -> Path:
@@ -70,12 +76,12 @@ class PowerShellExecutor:
             raise FileNotFoundError(f"PowerShell collector script not found: {resolved}")
         return resolved
 
-    def _build_args(self, executable: str, execution: PowerShellExecution) -> list[str]:
+    def _build_args(self, executable: list[str], execution: PowerShellExecution) -> list[str]:
         script = self._safe_script_path(execution.script_path)
         parameter_json = json.dumps(execution.parameter, separators=(",", ":"))
         collector_json = json.dumps(execution.collector, separators=(",", ":"))
         return [
-            executable,
+            *executable,
             "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
@@ -103,7 +109,7 @@ class PowerShellExecutor:
         self,
         execution: PowerShellExecution,
         *,
-        executable: str,
+        executable: list[str],
         attempt: int,
         started_at: float,
     ) -> PowerShellExecutionResult:
